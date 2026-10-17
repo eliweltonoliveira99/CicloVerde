@@ -1,0 +1,14 @@
+# Arquivo com senhas do banco de dados local
+db.properties
+src/db.properties
+
+# Bytecodes compilados
+bin/
+*.class
+
+# Configurações de IDE
+.classpath
+.project
+.settings/
+.idea/
+*.iml
