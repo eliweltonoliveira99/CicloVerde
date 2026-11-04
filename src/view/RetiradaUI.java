@@ -2,285 +2,110 @@ package view;
 
 import dao.AlimentoDAO;
 import model.Alimento;
-
+import model.Empresa;
+import model.Validacao;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.text.SimpleDateFormat;
-import java.text.ParseException;
-import java.util.Date;
+import java.time.LocalDate;
 import java.util.List;
-
-public class RetiradaUI extends JFrame {
-
-    private JPanel painelItens;
-
-    public RetiradaUI() {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception e) {
-            e.printStackTrace();
+import java.util.Locale;
+public class RetiradaUI extends JDialog {
+    private final Empresa empresa;
+    private final Runnable aoAlterar;
+    private final JPanel disponiveis = UI.painel(new GridBagLayout()), historico = UI.painel(new GridBagLayout());
+    private final JLabel resumo = UI.texto("Carregando alimentos…");
+    private final JButton atualizar = UI.botao("Atualizar", UI.AZUL);
+    private boolean carregando;
+    public RetiradaUI(Window pai, Empresa empresa, boolean admin, Runnable aoAlterar) {
+        super(pai, "CicloVerde - Perfil da empresa", ModalityType.APPLICATION_MODAL);
+        this.empresa = empresa; this.aoAlterar = aoAlterar;
+        setSize(850, 800); setMinimumSize(new Dimension(750, 690)); setLocationRelativeTo(pai); setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+        JPanel raiz = UI.fundo(new BorderLayout(0, 10), true);
+        JPanel topo = UI.painel(new BorderLayout());
+        topo.add(UI.cabecalho("EMPRESAS / PERFIL" + (empresa.isDemonstracao() ? " / DEMONSTRAÇÃO" : ""), empresa.getNome(),
+                empresa.getCidade().isBlank() ? "Cidade não informada" : empresa.getCidade(), true), BorderLayout.NORTH);
+        JPanel info = UI.cartao(null, 18); info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
+        info.add(UI.texto("Responsável: " + informado(empresa.getResponsavel())));
+        info.add(new JLabel("<html><div style='width:520px'>Local de retirada: " + UI.html(informado(empresa.getEndereco())) + "</div></html>"));
+        if (!empresa.getDescricao().isBlank()) info.add(new JLabel("<html><div style='width:520px'>" + UI.html(empresa.getDescricao()) + "</div></html>"));
+        if (empresa.isDemonstracao()) info.add(UI.texto("Alimentos, quantidades e validades deste perfil são dados de demonstração."));
+        if (admin) {
+            JButton novo = UI.botao("Cadastrar alimento nesta empresa", UI.VERDE);
+            novo.addActionListener(e -> new CadastroUI(this, empresa, () -> { carregar(); aoAlterar.run(); }).setVisible(true)); info.add(novo);
         }
-
-        setTitle("CicloVerde - Retirada de Produtos");
-        setSize(560, 700);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setLocationRelativeTo(null);
-        setResizable(false);
-
-        // ─── Painel principal com gradiente ───
-        JPanel mainPanel = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                Graphics2D g2d = (Graphics2D) g;
-                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                GradientPaint gradient = new GradientPaint(
-                        0, 0, new Color(235, 248, 250),
-                        0, getHeight(), new Color(215, 238, 248));
-                g2d.setPaint(gradient);
-                g2d.fillRect(0, 0, getWidth(), getHeight());
-            }
-        };
-        mainPanel.setLayout(new BorderLayout(0, 0));
-
-        // ─── Header ───
-        JPanel headerPanel = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                Graphics2D g2d = (Graphics2D) g;
-                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                GradientPaint gradient = new GradientPaint(
-                        0, 0, new Color(22, 90, 170),
-                        getWidth(), 0, new Color(14, 130, 200));
-                g2d.setPaint(gradient);
-                g2d.fillRect(0, 0, getWidth(), getHeight());
-            }
-        };
-        headerPanel.setLayout(new BoxLayout(headerPanel, BoxLayout.Y_AXIS));
-        headerPanel.setBorder(new EmptyBorder(22, 30, 22, 30));
-        headerPanel.setOpaque(false);
-
-        JLabel lblTitulo = new JLabel("Retirada de Produtos");
-        lblTitulo.setFont(new Font("Segoe UI", Font.BOLD, 24));
-        lblTitulo.setForeground(Color.WHITE);
-        lblTitulo.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        JLabel lblSubtitulo = new JLabel("Itens disponíveis para retirada pela sua ONG");
-        lblSubtitulo.setFont(new Font("Segoe UI", Font.ITALIC, 13));
-        lblSubtitulo.setForeground(new Color(200, 230, 255));
-        lblSubtitulo.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        headerPanel.add(lblTitulo);
-        headerPanel.add(Box.createRigidArea(new Dimension(0, 4)));
-        headerPanel.add(lblSubtitulo);
-
-        // ─── Área de Itens com scroll ───
-        painelItens = new JPanel();
-        painelItens.setLayout(new BoxLayout(painelItens, BoxLayout.Y_AXIS));
-        painelItens.setOpaque(false);
-        painelItens.setBorder(new EmptyBorder(10, 20, 10, 20));
-
-        JScrollPane scrollPane = new JScrollPane(painelItens);
-        scrollPane.setOpaque(false);
-        scrollPane.getViewport().setOpaque(false);
-        scrollPane.setBorder(BorderFactory.createEmptyBorder());
-        scrollPane.getVerticalScrollBar().setUnitIncrement(12);
-        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
-
-        // ─── Rodapé com botão Voltar ───
-        JPanel rodapePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 12));
-        rodapePanel.setOpaque(false);
-
-        JButton btnVoltar = new JButton("← Voltar");
-        btnVoltar.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        btnVoltar.setUI(new javax.swing.plaf.basic.BasicButtonUI());
-        btnVoltar.setBackground(new Color(22, 90, 170));
-        btnVoltar.setForeground(Color.WHITE);
-        btnVoltar.setFocusPainted(false);
-        btnVoltar.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btnVoltar.setPreferredSize(new Dimension(110, 38));
-        btnVoltar.addActionListener(e -> {
-            new HomeUI().setVisible(true);
-            dispose();
-        });
-
-        rodapePanel.add(btnVoltar);
-
-        mainPanel.add(headerPanel, BorderLayout.NORTH);
-        mainPanel.add(scrollPane, BorderLayout.CENTER);
-        mainPanel.add(rodapePanel, BorderLayout.SOUTH);
-
-        add(mainPanel);
-
-        // Carrega os itens do banco
-        carregarItens();
+        for (Component c : info.getComponents()) if (c instanceof JComponent) ((JComponent)c).setAlignmentX(Component.LEFT_ALIGNMENT);
+        for (int i=info.getComponentCount()-1;i>0;i--) info.add(Box.createVerticalStrut(8),i);
+        JPanel blocoInfo = UI.painel(new BorderLayout()); blocoInfo.setBorder(new EmptyBorder(16,22,4,22)); blocoInfo.add(info);
+        topo.add(blocoInfo, BorderLayout.CENTER); raiz.add(topo, BorderLayout.NORTH);
+        JTabbedPane abas = new JTabbedPane(); abas.addTab("Disponíveis para reserva", scroll(disponiveis));
+        if (admin) abas.addTab("Histórico de lotes", scroll(historico));
+        abas.setBorder(new EmptyBorder(0, 22, 0, 22)); raiz.add(abas, BorderLayout.CENTER);
+        JPanel rodape = UI.painel(new BorderLayout(14, 0)); rodape.setBorder(new EmptyBorder(8, 26, 18, 26));
+        JButton voltar = UI.secundario("Voltar às empresas"); voltar.addActionListener(e -> dispose());
+        rodape.add(voltar, BorderLayout.WEST); rodape.add(resumo, BorderLayout.CENTER); rodape.add(atualizar, BorderLayout.EAST);
+        raiz.add(rodape, BorderLayout.SOUTH); setContentPane(raiz); atualizar.addActionListener(e -> carregar()); carregar();
     }
-
-    private void carregarItens() {
-        painelItens.removeAll();
-
-        AlimentoDAO dao = new AlimentoDAO();
-        List<Alimento> itens = dao.listarDisponiveis();
-
-        // Ordena por data de validade (vencimento mais próximo primeiro)
-        if (itens != null && !itens.isEmpty()) {
-            SimpleDateFormat sdfParse = new SimpleDateFormat("yyyy-MM-dd");
-            itens.sort((a, b) -> {
-                try {
-                    Date da = sdfParse.parse(a.getDataValidade());
-                    Date db = sdfParse.parse(b.getDataValidade());
-                    return da.compareTo(db);
-                } catch (ParseException ex) {
-                    return 0;
-                }
-            });
-        }
-
-        if (itens == null || itens.isEmpty()) {
-            JPanel semItens = new JPanel();
-            semItens.setOpaque(false);
-            semItens.setLayout(new BoxLayout(semItens, BoxLayout.Y_AXIS));
-
-            JLabel lblVazio = new JLabel("Nenhum item disponível no momento.");
-            lblVazio.setFont(new Font("Segoe UI", Font.ITALIC, 15));
-            lblVazio.setForeground(new Color(100, 130, 150));
-            lblVazio.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-            semItens.add(Box.createRigidArea(new Dimension(0, 80)));
-            semItens.add(lblVazio);
-
-            painelItens.add(semItens);
-        } else {
-            for (Alimento item : itens) {
-                painelItens.add(criarCardItem(item));
-                painelItens.add(Box.createRigidArea(new Dimension(0, 12)));
-            }
-        }
-
-        painelItens.revalidate();
-        painelItens.repaint();
+    private static String informado(String valor) { return valor == null || valor.isBlank() ? "Não informado" : valor; }
+    private static JScrollPane scroll(JPanel painel) {
+        JScrollPane scroll = new JScrollPane(painel); scroll.setBorder(null); scroll.getViewport().setBackground(UI.FUNDO);
+        scroll.getViewport().setOpaque(false); scroll.setOpaque(false);
+        scroll.getVerticalScrollBar().setUnitIncrement(18); return scroll;
     }
-
-    private JPanel criarCardItem(Alimento alimento) {
-        JPanel card = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                // Sombra suave
-                g2.setColor(new Color(0, 0, 0, 18));
-                g2.fillRoundRect(3, 5, getWidth() - 3, getHeight() - 3, 16, 16);
-                // Fundo branco
-                g2.setColor(Color.WHITE);
-                g2.fillRoundRect(0, 0, getWidth() - 4, getHeight() - 4, 16, 16);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        card.setLayout(new BorderLayout(12, 0));
-        card.setOpaque(false);
-        card.setBorder(new EmptyBorder(14, 18, 14, 18));
-        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
-
-        // ─── Informações do item ───
-        JPanel infoPanel = new JPanel();
-        infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
-        infoPanel.setOpaque(false);
-
-        JLabel lblNome = new JLabel(alimento.getNomeAlimento());
-        lblNome.setFont(new Font("Segoe UI", Font.BOLD, 15));
-        lblNome.setForeground(new Color(30, 60, 30));
-
-        JLabel lblQtd = new JLabel(String.format("%.1f kg disponíveis", alimento.getQuantidadeKg()));
-        lblQtd.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lblQtd.setForeground(new Color(80, 100, 80));
-
-        // Formata a data para o padrão brasileiro (dd/MM/yyyy)
-        String dataFormatada = alimento.getDataValidade();
-        try {
-            SimpleDateFormat sdfOriginal = new SimpleDateFormat("yyyy-MM-dd");
-            SimpleDateFormat sdfBrasileiro = new SimpleDateFormat("dd/MM/yyyy");
-            Date dataVal = sdfOriginal.parse(alimento.getDataValidade());
-            dataFormatada = sdfBrasileiro.format(dataVal);
-        } catch (ParseException ex) {
-            // Se falhar o parse, mantém o formato original
-        }
-
-        JLabel lblValidade = new JLabel("Validade: " + dataFormatada);
-        lblValidade.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lblValidade.setForeground(new Color(150, 100, 50));
-
-        // Badge de status
-        JLabel lblStatus = new JLabel("● " + alimento.getStatus());
-        lblStatus.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        lblStatus.setForeground(new Color(34, 139, 34));
-
-        infoPanel.add(lblNome);
-        infoPanel.add(Box.createRigidArea(new Dimension(0, 3)));
-        infoPanel.add(lblQtd);
-        infoPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-        infoPanel.add(lblValidade);
-
-        // ─── Coluna Direita: botão Reservar ───
-        JButton btnReservar = new JButton("Reservar") {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(getBackground());
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-
-            @Override
-            protected void paintBorder(Graphics g) {
-                // sem borda
-            }
-        };
-        btnReservar.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        btnReservar.setUI(new javax.swing.plaf.basic.BasicButtonUI());
-        btnReservar.setBackground(new Color(22, 90, 170));
-        btnReservar.setForeground(Color.WHITE);
-        btnReservar.setFocusPainted(false);
-        btnReservar.setOpaque(false);
-        btnReservar.setContentAreaFilled(false);
-        btnReservar.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btnReservar.setPreferredSize(new Dimension(100, 38));
-        btnReservar.setMaximumSize(new Dimension(100, 38));
-        // Botão ainda não funcional - apenas visual
-        btnReservar.setEnabled(true);
-        btnReservar.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseEntered(java.awt.event.MouseEvent e) {
-                btnReservar.setBackground(new Color(16, 72, 140));
-                btnReservar.repaint();
-            }
-
-            @Override
-            public void mouseExited(java.awt.event.MouseEvent e) {
-                btnReservar.setBackground(new Color(22, 90, 170));
-                btnReservar.repaint();
-            }
+    private void carregar() {
+        if (carregando) return;
+        carregando = true; disponiveis.removeAll(); historico.removeAll(); resumo.setText("Carregando alimentos…");
+        disponiveis.revalidate(); disponiveis.repaint(); historico.revalidate(); historico.repaint();
+        UI.tarefa(this, atualizar, () -> new AlimentoDAO().listarHistoricoEmpresa(empresa.getId()), this::renderizar, mensagem -> {
+            carregando = false; resumo.setText("Falha ao carregar. Tente Atualizar.");
+            adicionar(disponiveis, UI.texto("Não foi possível consultar os alimentos."), 0); finalizar(disponiveis, 1);
+            JOptionPane.showMessageDialog(this, mensagem, "Falha na consulta", JOptionPane.ERROR_MESSAGE);
         });
-
-        lblStatus.setAlignmentX(Component.CENTER_ALIGNMENT);
-        btnReservar.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        JPanel direitaPanel = new JPanel();
-        direitaPanel.setLayout(new BoxLayout(direitaPanel, BoxLayout.Y_AXIS));
-        direitaPanel.setOpaque(false);
-        direitaPanel.add(Box.createVerticalGlue());
-        direitaPanel.add(lblStatus);
-        direitaPanel.add(Box.createRigidArea(new Dimension(0, 6)));
-        direitaPanel.add(btnReservar);
-        direitaPanel.add(Box.createVerticalGlue());
-
-        card.add(infoPanel, BorderLayout.CENTER);
-        card.add(direitaPanel, BorderLayout.EAST);
-
+    }
+    private void renderizar(List<Alimento> itens) {
+        carregando = false; int qtd = 0, h = 0;
+        for (Alimento a : itens) {
+            boolean disponivel = Alimento.DISPONIVEL.equals(a.getStatus()) && !LocalDate.parse(a.getDataValidade()).isBefore(LocalDate.now());
+            if (disponivel) adicionar(disponiveis, card(a, true), qtd++);
+            adicionar(historico, card(a, false), h++);
+        }
+        if (qtd == 0) adicionar(disponiveis, UI.texto("Esta empresa não tem lotes disponíveis dentro da validade."), 0);
+        if (h == 0) adicionar(historico, UI.texto("Ainda não há alimentos cadastrados para esta empresa."), 0);
+        finalizar(disponiveis, Math.max(1, qtd)); finalizar(historico, Math.max(1, h));
+        resumo.setText(qtd + " lotes disponíveis para reserva");
+    }
+    private static void adicionar(JPanel painel, JComponent item, int linha) {
+        GridBagConstraints g = new GridBagConstraints(); g.gridx = 0; g.gridy = linha; g.weightx = 1; g.fill = GridBagConstraints.HORIZONTAL;
+        g.anchor = GridBagConstraints.NORTH; g.insets = new Insets(6, 6, 6, 6); painel.add(item, g);
+    }
+    private static void finalizar(JPanel painel, int linha) {
+        GridBagConstraints g = new GridBagConstraints(); g.gridy = linha; g.weighty = 1; painel.add(Box.createVerticalGlue(), g);
+        painel.revalidate(); painel.repaint();
+    }
+    private JPanel card(Alimento alimento, boolean permitirReserva) {
+        JPanel card = UI.cartao(new BorderLayout(18, 0), 18);
+        JPanel info = UI.painel(new GridLayout(0, 1, 0, 6));
+        info.add(UI.titulo(alimento.getNomeAlimento(), 17));
+        info.add(UI.texto(String.format(Locale.forLanguageTag("pt-BR"), "%.2f kg · Validade: %s", alimento.getQuantidadeKg(), LocalDate.parse(alimento.getDataValidade()).format(Validacao.DATA_BR))));
+        boolean vencido = LocalDate.parse(alimento.getDataValidade()).isBefore(LocalDate.now());
+        info.add(UI.texto(alimento.getStatus() + (vencido ? " · Vencido" : ""))); card.add(info, BorderLayout.CENTER);
+        if (permitirReserva) {
+            JButton reservar = UI.botao("Reservar lote", UI.AZUL);
+            reservar.addActionListener(e -> reservar(alimento, reservar));
+            JPanel acao = UI.painel(new GridBagLayout()); acao.add(reservar); card.add(acao, BorderLayout.EAST);
+        }
         return card;
+    }
+    private void reservar(Alimento alimento, JButton botao) {
+        int resposta = JOptionPane.showConfirmDialog(this,
+                "Reservar o lote completo de " + alimento.getNomeAlimento() + "?\nEmpresa: " + empresa.getNome()
+                        + "\nA reserva não confirma a entrega física dos alimentos.", "Confirmar reserva", JOptionPane.YES_NO_OPTION);
+        if (resposta != JOptionPane.YES_OPTION) return;
+        UI.tarefa(this, botao, () -> new AlimentoDAO().reservar(alimento.getId(), empresa.getId()), sucesso -> {
+            JOptionPane.showMessageDialog(this, sucesso ? "Reserva registrada. Combine a coleta com a empresa.\nEste lote não está mais disponível para novas reservas."
+                    : "O lote já foi reservado, venceu ou não está mais disponível. A lista será atualizada.",
+                    sucesso ? "Reserva concluída" : "Lote indisponível", sucesso ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+            carregar(); aoAlterar.run();
+        });
     }
 }

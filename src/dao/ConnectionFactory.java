@@ -16,8 +16,6 @@ public class ConnectionFactory {
     static {
         Properties props = new Properties();
         boolean loaded = false;
-
-        // 1. Tenta carregar do classpath (ex: src/ ou bin/)
         try (InputStream in = ConnectionFactory.class.getClassLoader().getResourceAsStream("db.properties")) {
             if (in != null) {
                 props.load(in);
@@ -25,8 +23,6 @@ public class ConnectionFactory {
             }
         } catch (Exception ignored) {
         }
-
-        // 2. Se não estiver no classpath, tenta carregar direto do sistema de arquivos
         if (!loaded) {
             File[] possibleFiles = new File[] {
                 new File("db.properties"),
@@ -46,8 +42,6 @@ public class ConnectionFactory {
                 }
             }
         }
-
-        // Aplica os valores do arquivo db.properties se encontrado
         if (loaded) {
             if (props.getProperty("db.url") != null && !props.getProperty("db.url").trim().isEmpty()) {
                 url = props.getProperty("db.url").trim();
@@ -59,7 +53,6 @@ public class ConnectionFactory {
                 pass = props.getProperty("db.password").trim();
             }
         } else {
-            // Fallback para variáveis de ambiente, se existirem
             if (System.getenv("DB_URL") != null) {
                 url = System.getenv("DB_URL");
             }
@@ -74,9 +67,27 @@ public class ConnectionFactory {
 
     public static Connection getConnection() {
         try {
-            return DriverManager.getConnection(url, user, pass);
+            Properties connectionProps = new Properties();
+            connectionProps.setProperty("user", user);
+            connectionProps.setProperty("password", pass);
+            connectionProps.setProperty("connectTimeout", "5000");
+            connectionProps.setProperty("socketTimeout", "10000");
+            Connection connection = DriverManager.getConnection(url, connectionProps);
+            String schemaDemonstracao = System.getProperty("cicloverde.demo.schema");
+            if (schemaDemonstracao != null) {
+                try {
+                    if (!schemaDemonstracao.matches("cicloverde_demo_[a-f0-9]{32}")) {
+                        throw new SQLException("Banco de demonstração inválido.");
+                    }
+                    connection.setCatalog(schemaDemonstracao);
+                } catch (SQLException e) {
+                    connection.close();
+                    throw e;
+                }
+            }
+            return connection;
         } catch (SQLException e) {
-            throw new RuntimeException("Erro ao conectar com o banco de dados. Verifique se o MySQL está rodando: " + e);
+            throw new DadosException("Não foi possível conectar ao MySQL. Verifique o serviço e a configuração do banco.", e);
         }
     }
 }

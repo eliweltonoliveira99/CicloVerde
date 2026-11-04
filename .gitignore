@@ -12,3 +12,9 @@ bin/
 .settings/
 .idea/
 *.iml
+
+# Arquivos intermediários de extração, compilação e testes
+tmp/
+
+# Biblioteca antiga, sem uso na versão atual
+lib/LGoodDatePicker.jar

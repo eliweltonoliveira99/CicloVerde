@@ -1,6 +1,9 @@
 package model;
 
 public class Alimento {
+    public static final String DISPONIVEL = "Disponível";
+    public static final String RESERVADO = "Reservado";
+    private String empresaNome;
     private int id;
     private int comercioId;
     private String nomeAlimento;
@@ -13,18 +16,16 @@ public class Alimento {
         this.nomeAlimento = nomeAlimento;
         this.quantidadeKg = quantidadeKg;
         this.dataValidade = dataValidade;
-        this.status = "Disponível";
+        this.status = DISPONIVEL;
     }
-
-    // Getters
     public int getId() { return id; }
     public int getComercioId() { return comercioId; }
     public String getNomeAlimento() { return nomeAlimento; }
     public double getQuantidadeKg() { return quantidadeKg; }
     public String getDataValidade() { return dataValidade; }
     public String getStatus() { return status; }
-
-    // Setters
+    public String getEmpresaNome() { return empresaNome; }
+    public void setEmpresaNome(String empresaNome) { this.empresaNome = empresaNome; }
     public void setId(int id) { this.id = id; }
     public void setStatus(String status) { this.status = status; }
 }
